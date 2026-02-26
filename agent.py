@@ -1,29 +1,54 @@
 import requests
 import os
 
+conversation_history = []
+
+BASE_DIR = "project_files"
+os.makedirs(BASE_DIR, exist_ok=True)
+
 def create_file(filename, content):
-    with open(filename, "w", encoding="utf-8") as f:
+
+    filepath = os.path.join(BASE_DIR, filename)
+
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
-    return f"File {filename} created successfully."
+
+    return f"File {filename} created inside {BASE_DIR}."
 
 def create_folder(foldername):
-    os.makedirs(foldername, exist_ok=True)
-    return f"Folder {foldername} created."
+
+    folderpath = os.path.join(BASE_DIR, foldername)
+
+    os.makedirs(folderpath, exist_ok=True)
+
+    return f"Folder {foldername} created inside {BASE_DIR}."
 
 
 
 # I used ollama local LLM
 
 def ask_llm(prompt):
+
+    global conversation_history
+
+    conversation_history.append(f"User: {prompt}")
+
+    full_prompt = "\n".join(conversation_history)
+
     response = requests.post(
         "http://localhost:11434/api/generate",
         json={
             "model": "llama3:8b",
-            "prompt": prompt,
+            "prompt": full_prompt,
             "stream": False
         }
     )
-    return response.json()["response"]
+
+    answer = response.json()["response"]
+
+    conversation_history.append(f"Agent: {answer}")
+
+    return answer
 
 def get_time():
     import datetime
@@ -34,37 +59,54 @@ def agent(user_input):
     decision_prompt = f"""
     You are an AI agent.
 
-    Try to answer in less words, don't explain too much, until asked.
+    You MUST respond in ONLY ONE of the following exact formats:
 
-    If the user wants to create a file, respond like:
-    CREATE_FILE: filename.py
+    1) USE_TIME_TOOL
+    2) CREATE_FILE: filename.py
+    3) CREATE_FOLDER: foldername
+    4) USE_LLM
 
-    If the user wants to create a folder, respond like:
-    CREATE_FOLDER: foldername
-
-    If the user is asking for current time, respond with: USE_TIME_TOOL
-    Otherwise respond with: USE_LLM
+    Do NOT explain.
+    Do NOT add extra text.
+    Return only one line.
 
     User input: {user_input}
     """
 
-    decision = ask_llm(decision_prompt)
+    decision = ask_llm(decision_prompt).strip()
 
-    if "USE_TIME_TOOL" in decision:
-
+    if decision == "USE_TIME_TOOL":
         return get_time()
-    
-    elif "CREATE_FILE:" in decision:
 
-        filename = decision.split("CREATE_FILE:")[1].strip()
-        code = ask_llm(f"Generate full Python code for {filename}")
+    elif decision.startswith("CREATE_FILE:"):
+
+        filename = decision.replace("CREATE_FILE:", "").strip()
+
+        # Safety check, so file is not made on some dangerous path
+        if not filename.endswith(".py"):
+            return "Only .py files allowed."
+
+        if any(x in filename for x in ["..", "/", "\\"]):
+            return "Invalid filename."
+
+        code_prompt = f"""
+            Generate complete working Python code for {filename}.
+            Return ONLY the raw code.
+            Do NOT explain anything."""
+        
+        code = ask_llm(code_prompt)
+
         return create_file(filename, code)
-    
-    elif "CREATE_FOLDER:" in decision:
 
-        foldername = decision.split("CREATE_FOLDER:")[1].strip()
+    elif decision.startswith("CREATE_FOLDER:"):
+
+        foldername = decision.replace("CREATE_FOLDER:", "").strip()
+
+        if any(x in foldername for x in ["..", "/", "\\"]):
+            return "Invalid folder name."
+
         return create_folder(foldername)
-    
+
     else:
         return ask_llm(user_input)
 
