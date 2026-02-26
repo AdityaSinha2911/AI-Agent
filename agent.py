@@ -1,8 +1,10 @@
 import requests
 import os
 
+# saves history of conversation for further use
 conversation_history = []
 
+# creating limits, so that it changes within an environment
 BASE_DIR = "project_files"
 os.makedirs(BASE_DIR, exist_ok=True)
 
@@ -47,6 +49,11 @@ def ask_llm(prompt):
     answer = response.json()["response"]
 
     conversation_history.append(f"Agent: {answer}")
+
+    # making it store only 20 recent conversation
+    
+    if len(conversation_history) > 20:
+        conversation_history[:] = conversation_history[-20:]
 
     return answer
 
@@ -95,6 +102,13 @@ def agent(user_input):
             Do NOT explain anything."""
         
         code = ask_llm(code_prompt)
+
+        # issue resolved for ''' before code generation
+
+        if "```" in code:
+            code = code.replace("```python", "")
+            code = code.replace("```", "")
+            code = code.strip()
 
         return create_file(filename, code)
 
